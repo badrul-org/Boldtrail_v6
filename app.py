@@ -44,6 +44,14 @@ def load_credentials():
 CREDENTIALS = load_credentials()
 
 
+def is_headless_server():
+    """Detect if running on a headless server (no display available)."""
+    import platform
+    if platform.system() == "Linux" and not os.environ.get("DISPLAY"):
+        return True
+    return False
+
+
 def create_driver():
     """Create Chrome driver for Vulcan7 (Selenium)."""
     options = Options()
@@ -60,6 +68,12 @@ def create_driver():
     options.add_argument("--no-first-run")
     options.add_argument("--no-default-browser-check")
 
+    headless = is_headless_server()
+    if headless:
+        print("Headless server detected — enabling headless mode.")
+        options.add_argument("--headless=new")
+        options.add_argument("--disable-gpu")
+
     user_agent = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -74,7 +88,8 @@ def create_driver():
     options.add_argument("--profile-directory=Default")
 
     driver = webdriver.Chrome(options=options)
-    driver.maximize_window()
+    if not headless:
+        driver.maximize_window()
 
     stealth(
         driver,
