@@ -103,10 +103,25 @@ def create_undetectable_driver():
     options.add_argument("--profile-directory=Default")
     options.add_argument("--lang=en-US,en")
 
-    driver = uc.Chrome(options=options, headless=False, version_main=chrome_version)
-    driver.maximize_window()
-
-    return driver
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        try:
+            print(f"Starting browser (attempt {attempt}/{max_attempts})...")
+            driver = uc.Chrome(options=options, headless=False, version_main=chrome_version)
+            try:
+                driver.maximize_window()
+            except Exception:
+                pass  # Some servers fail on maximize; window-size flag handles it
+            return driver
+        except Exception as e:
+            print(f"Browser failed to start (attempt {attempt}/{max_attempts}): {e}")
+            try:
+                driver.quit()
+            except Exception:
+                pass
+            if attempt >= max_attempts:
+                raise RuntimeError(f"Could not start browser after {max_attempts} attempts: {e}")
+            time.sleep(3)
 
 
 def visit_google_news_first(driver):

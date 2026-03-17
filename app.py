@@ -116,11 +116,26 @@ def create_driver():
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
 
-    driver = uc.Chrome(options=options, headless=headless, version_main=chrome_version)
-    if not headless:
-        driver.maximize_window()
-
-    return driver
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        try:
+            print(f"Starting browser (attempt {attempt}/{max_attempts})...")
+            driver = uc.Chrome(options=options, headless=headless, version_main=chrome_version)
+            if not headless:
+                try:
+                    driver.maximize_window()
+                except Exception:
+                    pass  # Some servers fail on maximize; window-size flag handles it
+            return driver
+        except Exception as e:
+            print(f"Browser failed to start (attempt {attempt}/{max_attempts}): {e}")
+            try:
+                driver.quit()
+            except Exception:
+                pass
+            if attempt >= max_attempts:
+                raise RuntimeError(f"Could not start browser after {max_attempts} attempts: {e}")
+            time.sleep(3)
 
 
 def _send_keys_slowly(element, text, delay_range=(30, 60)):
