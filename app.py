@@ -332,19 +332,22 @@ def is_yesterday_date_added(date_text: str) -> bool:
     return parsed.date() == yesterday
 
 
-def run_logins(test_mode=False):
+def run_logins(test_mode=False, driver=None):
     """Run Vulcan7 scraping + BoldTrail automation in a single undetectable browser.
 
     Args:
         test_mode: If True, use contacts whose 'Date Added' is yesterday (for testing when none have today's date).
                    If False, only use contacts whose 'Date Added' is today.
+        driver: Optional existing browser driver. If provided, it will be reused and NOT closed.
     """
     if test_mode:
         print("TEST MODE: Using contacts with 'Date Added' = yesterday.\n")
 
+    owns_driver = driver is None
     had_contacts_from_vulcan = False
-    driver = create_driver()
-    print("Undetectable Chrome browser started successfully!")
+    if owns_driver:
+        driver = create_driver()
+    print("Undetectable Chrome browser ready!")
 
     try:
         # ── Step 1: Vulcan7 — login and scrape contacts ──
@@ -483,8 +486,15 @@ def run_logins(test_mode=False):
         save_screenshot(driver, "critical_error")
         raise
     finally:
-        print("Closing browser...")
-        driver.quit()
+        if owns_driver:
+            print("Closing browser...")
+            driver.quit()
+        else:
+            # Reset browser to blank page for next run (don't close it)
+            try:
+                driver.get("about:blank")
+            except Exception:
+                pass
 
     print("\n" + "=" * 60)
     print("All automation completed!")

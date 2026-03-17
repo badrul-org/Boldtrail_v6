@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BoldTrail Automation Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: #0f1117;
+            color: #e1e4e8;
+            min-height: 100vh;
+        }
+        .header {
+            background: linear-gradient(135deg, #1a1f2e 0%, #0d1117 100%);
+            padding: 20px 32px;
+            border-bottom: 1px solid #21262d;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .header h1 {
+            font-size: 22px;
+            font-weight: 600;
+            color: #f0f6fc;
+        }
+        .status-bar {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+        }
+        .status-dot {
+            width: 10px; height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 6px;
+        }
+        .status-dot.green { background: #3fb950; box-shadow: 0 0 6px #3fb950; }
+        .status-dot.red { background: #f85149; box-shadow: 0 0 6px #f85149; }
+        .status-dot.yellow { background: #d29922; box-shadow: 0 0 6px #d29922; }
+        .status-text { font-size: 13px; color: #8b949e; }
+
+        .container {
+            display: grid;
+            grid-template-columns: 380px 1fr;
+            grid-template-rows: auto 1fr;
+            gap: 20px;
+            padding: 20px 32px;
+            max-height: calc(100vh - 80px);
+        }
+
+        .card {
+            background: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 12px;
+            padding: 20px;
+            overflow: hidden;
+        }
+        .card h2 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: #f0f6fc;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .card h2 .icon { font-size: 18px; }
+
+        /* Schedule Panel */
+        .schedule-panel { grid-row: 1 / 3; }
+        .form-group { margin-bottom: 14px; }
+        .form-group label {
+            display: block;
+            font-size: 12px;
+            font-weight: 500;
+            color: #8b949e;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px 12px;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            color: #e1e4e8;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .form-group input:focus, .form-group select:focus {
+            border-color: #388bfd;
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 14px;
+        }
+        .checkbox-group input[type="checkbox"] {
+            width: 16px; height: 16px;
+            accent-color: #388bfd;
+        }
+        .checkbox-group label { font-size: 13px; color: #8b949e; cursor: pointer; }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 10px 18px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            width: 100%;
+        }
+        .btn-primary {
+            background: #238636;
+            color: #fff;
+        }
+        .btn-primary:hover { background: #2ea043; }
+        .btn-primary:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+        .btn-run {
+            background: #388bfd;
+            color: #fff;
+            margin-top: 8px;
+        }
+        .btn-run:hover { background: #58a6ff; }
+        .btn-run:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+        .btn-danger {
+            background: transparent;
+            color: #f85149;
+            border: 1px solid #f8514933;
+            padding: 6px 12px;
+            width: auto;
+            font-size: 12px;
+        }
+        .btn-danger:hover { background: #f8514922; }
+
+        .divider {
+            height: 1px;
+            background: #21262d;
+            margin: 20px 0;
+        }
+
+        .schedule-list { margin-top: 12px; }
+        .schedule-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px;
+            background: #0d1117;
+            border: 1px solid #21262d;
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+        .schedule-info { flex: 1; }
+        .schedule-time {
+            font-size: 18px;
+            font-weight: 600;
+            color: #f0f6fc;
+        }
+        .schedule-tz {
+            font-size: 12px;
+            color: #8b949e;
+            margin-top: 2px;
+        }
+        .schedule-badge {
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: #d2992233;
+            color: #d29922;
+            margin-left: 8px;
+        }
+
+        /* Live Logs */
+        .logs-panel { grid-column: 2; grid-row: 1; min-height: 350px; display: flex; flex-direction: column; }
+        .log-area {
+            flex: 1;
+            background: #010409;
+            border: 1px solid #21262d;
+            border-radius: 8px;
+            padding: 12px;
+            font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            overflow-y: auto;
+            max-height: 320px;
+            scroll-behavior: smooth;
+        }
+        .log-line { padding: 1px 0; }
+        .log-ts { color: #484f58; margin-right: 8px; }
+        .log-msg { color: #c9d1d9; }
+        .log-msg.error { color: #f85149; }
+        .log-msg.success { color: #3fb950; }
+        .log-empty { color: #484f58; font-style: italic; text-align: center; padding: 40px; }
+
+        /* Run History */
+        .history-panel { grid-column: 2; grid-row: 2; display: flex; flex-direction: column; }
+        .runs-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .runs-table th {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #21262d;
+            color: #8b949e;
+            font-weight: 500;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .runs-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #21262d;
+        }
+        .runs-table tr:hover { background: #1c2128; }
+        .runs-table tr.clickable { cursor: pointer; }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+        .badge.success { background: #23893622; color: #3fb950; }
+        .badge.error { background: #f8514922; color: #f85149; }
+        .badge.running { background: #388bfd22; color: #58a6ff; }
+
+        .table-scroll {
+            overflow-y: auto;
+            max-height: 300px;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 800px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .modal h3 {
+            font-size: 16px;
+            margin-bottom: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .modal-close {
+            background: none;
+            border: none;
+            color: #8b949e;
+            font-size: 20px;
+            cursor: pointer;
+        }
+        .modal-log-area {
+            background: #010409;
+            border: 1px solid #21262d;
+            border-radius: 8px;
+            padding: 12px;
+            font-family: monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .screenshot-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 12px;
+            margin-top: 16px;
+        }
+        .screenshot-thumb {
+            border: 1px solid #21262d;
+            border-radius: 8px;
+            overflow: hidden;
+            cursor: pointer;
+        }
+        .screenshot-thumb img {
+            width: 100%;
+            display: block;
+        }
+        .screenshot-thumb p {
+            padding: 6px 8px;
+            font-size: 11px;
+            color: #8b949e;
+            background: #0d1117;
+        }
+
+        @media (max-width: 900px) {
+            .container {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto;
+            }
+            .schedule-panel { grid-row: auto; }
+            .logs-panel { grid-column: 1; grid-row: auto; }
+            .history-panel { grid-column: 1; grid-row: auto; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>BoldTrail Automation Dashboard</h1>
+    <div class="status-bar">
+        <div>
+            <span class="status-dot" id="browserDot"></span>
+            <span class="status-text" id="browserStatus">Checking...</span>
+        </div>
+        <div>
+            <span class="status-dot" id="runDot"></span>
+            <span class="status-text" id="runStatus">Idle</span>
+        </div>
+    </div>
+</div>
+
+<div class="container">
+    <!-- Schedule Panel -->
+    <div class="card schedule-panel">
+        <h2><span class="icon">&#128337;</span> Schedules</h2>
+
+        <div class="form-group">
+            <label>Run Time</label>
+            <input type="time" id="schedTime" value="08:00">
+        </div>
+        <div class="form-group">
+            <label>Timezone</label>
+            <select id="schedTz">
+                <option value="US/Eastern">US/Eastern (ET)</option>
+                <option value="US/Central">US/Central (CT)</option>
+                <option value="US/Mountain">US/Mountain (MT)</option>
+                <option value="US/Pacific">US/Pacific (PT)</option>
+                <option value="UTC">UTC</option>
+                <option value="Asia/Dhaka">Asia/Dhaka (BST)</option>
+                <option value="Europe/London">Europe/London (GMT/BST)</option>
+            </select>
+        </div>
+        <div class="checkbox-group">
+            <input type="checkbox" id="schedTest">
+            <label for="schedTest">Test mode (use yesterday's contacts)</label>
+        </div>
+        <button class="btn btn-primary" onclick="addSchedule()">Add Schedule</button>
+        <button class="btn btn-run" id="runNowBtn" onclick="runNow()">Run Now</button>
+
+        <div class="divider"></div>
+
+        <h2><span class="icon">&#128197;</span> Active Schedules</h2>
+        <div class="schedule-list" id="scheduleList">
+            <div class="log-empty">No schedules yet</div>
+        </div>
+    </div>
+
+    <!-- Live Logs -->
+    <div class="card logs-panel">
+        <h2><span class="icon">&#128214;</span> Live Logs</h2>
+        <div class="log-area" id="logArea">
+            <div class="log-empty">Waiting for a run to start...</div>
+        </div>
+    </div>
+
+    <!-- Run History -->
+    <div class="card history-panel">
+        <h2><span class="icon">&#128202;</span> Run History</h2>
+        <div class="table-scroll">
+            <table class="runs-table">
+                <thead>
+                    <tr>
+                        <th>Run ID</th>
+                        <th>Started</th>
+                        <th>Finished</th>
+                        <th>Mode</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="runsBody">
+                    <tr><td colspan="5" style="text-align:center;color:#484f58;padding:24px;">No runs yet</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Log Detail Modal -->
+<div class="modal-overlay" id="logModal">
+    <div class="modal">
+        <h3>
+            <span id="modalTitle">Run Logs</span>
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+        </h3>
+        <div id="modalError" style="display:none; background:#f8514922; border:1px solid #f85149; border-radius:8px; padding:12px; margin-bottom:12px; color:#f85149; font-size:13px;"></div>
+        <div class="modal-log-area" id="modalLogs"></div>
+        <div id="modalScreenshots"></div>
+    </div>
+</div>
+
+<script>
+// ── SSE: Live Logs ──
+const logArea = document.getElementById('logArea');
+let logStarted = false;
+
+const evtSource = new EventSource('/api/logs/stream');
+evtSource.onmessage = function(event) {
+    const entry = JSON.parse(event.data);
+    if (!logStarted) {
+        logArea.innerHTML = '';
+        logStarted = true;
+    }
+    const div = document.createElement('div');
+    div.className = 'log-line';
+
+    let msgClass = '';
+    const msg = entry.msg.toLowerCase();
+    if (msg.includes('error') || msg.includes('failed') || msg.includes('crash')) msgClass = 'error';
+    else if (msg.includes('success') || msg.includes('completed') || msg.startsWith('[run')) msgClass = 'success';
+
+    div.innerHTML = `<span class="log-ts">${entry.ts}</span><span class="log-msg ${msgClass}">${escapeHtml(entry.msg)}</span>`;
+    logArea.appendChild(div);
+    logArea.scrollTop = logArea.scrollHeight;
+};
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// ── Status Polling ──
+async function pollStatus() {
+    try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+
+        const bDot = document.getElementById('browserDot');
+        const bText = document.getElementById('browserStatus');
+        bDot.className = 'status-dot ' + (data.browser_alive ? 'green' : 'red');
+        bText.textContent = data.browser_alive ? 'Browser Ready' : 'Browser Down';
+
+        const rDot = document.getElementById('runDot');
+        const rText = document.getElementById('runStatus');
+        if (data.browser_busy) {
+            rDot.className = 'status-dot yellow';
+            rText.textContent = 'Running...';
+            document.getElementById('runNowBtn').disabled = true;
+        } else {
+            rDot.className = 'status-dot green';
+            rText.textContent = 'Idle';
+            document.getElementById('runNowBtn').disabled = false;
+        }
+    } catch(e) {}
+}
+setInterval(pollStatus, 3000);
+pollStatus();
+
+// ── Schedules ──
+async function loadSchedules() {
+    const res = await fetch('/api/schedules');
+    const schedules = await res.json();
+    const list = document.getElementById('scheduleList');
+
+    if (schedules.length === 0) {
+        list.innerHTML = '<div class="log-empty">No schedules yet</div>';
+        return;
+    }
+
+    list.innerHTML = schedules.map(s => `
+        <div class="schedule-item">
+            <div class="schedule-info">
+                <div class="schedule-time">${s.time}${s.test_mode ? '<span class="schedule-badge">TEST</span>' : ''}</div>
+                <div class="schedule-tz">${s.timezone}</div>
+            </div>
+            <button class="btn btn-danger" onclick="deleteSchedule('${s.id}')">Remove</button>
+        </div>
+    `).join('');
+}
+
+async function addSchedule() {
+    const time = document.getElementById('schedTime').value;
+    const timezone = document.getElementById('schedTz').value;
+    const test_mode = document.getElementById('schedTest').checked;
+
+    if (!time) { alert('Please select a time'); return; }
+
+    await fetch('/api/schedules', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ time, timezone, test_mode })
+    });
+    loadSchedules();
+}
+
+async function deleteSchedule(id) {
+    await fetch(`/api/schedules/${id}`, { method: 'DELETE' });
+    loadSchedules();
+}
+
+async function runNow() {
+    const test_mode = document.getElementById('schedTest').checked;
+    const res = await fetch('/api/run-now', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ test_mode })
+    });
+    const data = await res.json();
+    if (data.error) {
+        alert(data.error);
+    } else {
+        logStarted = false;
+        logArea.innerHTML = '<div class="log-empty">Starting run...</div>';
+    }
+    loadRuns();
+}
+
+// ── Run History ──
+async function loadRuns() {
+    const res = await fetch('/api/runs');
+    const runs = await res.json();
+    const tbody = document.getElementById('runsBody');
+
+    if (runs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#484f58;padding:24px;">No runs yet</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = runs.map(r => `
+        <tr class="clickable" onclick="showRunLogs('${r.id}', '${r.status}', ${JSON.stringify(r.error_message || '').replace(/'/g, "\\'")})">
+            <td style="font-family:monospace;color:#58a6ff;">${r.id}</td>
+            <td>${r.started_at || '-'}</td>
+            <td>${r.finished_at || '-'}</td>
+            <td>${r.test_mode ? 'Test' : 'Live'}</td>
+            <td><span class="badge ${r.status}">${r.status}</span></td>
+        </tr>
+    `).join('');
+}
+
+async function showRunLogs(runId, status, errorMsg) {
+    document.getElementById('modalTitle').textContent = `Run ${runId}`;
+    const modalLogs = document.getElementById('modalLogs');
+    const modalError = document.getElementById('modalError');
+
+    // Show error
+    if (status === 'error' && errorMsg) {
+        modalError.style.display = 'block';
+        modalError.textContent = errorMsg;
+    } else {
+        modalError.style.display = 'none';
+    }
+
+    // Load logs
+    modalLogs.innerHTML = '<div class="log-empty">Loading...</div>';
+    const res = await fetch(`/api/runs/${runId}/logs`);
+    const logs = await res.json();
+
+    if (logs.length === 0) {
+        modalLogs.innerHTML = '<div class="log-empty">No logs recorded for this run</div>';
+    } else {
+        modalLogs.innerHTML = logs.map(l => {
+            let msgClass = '';
+            const msg = l.message.toLowerCase();
+            if (msg.includes('error') || msg.includes('failed')) msgClass = 'error';
+            else if (msg.includes('success') || msg.includes('completed')) msgClass = 'success';
+            return `<div class="log-line"><span class="log-ts">${l.timestamp}</span><span class="log-msg ${msgClass}">${escapeHtml(l.message)}</span></div>`;
+        }).join('');
+    }
+
+    // Load screenshots
+    const ssRes = await fetch('/api/screenshots');
+    const screenshots = await ssRes.json();
+    const ssDiv = document.getElementById('modalScreenshots');
+    if (screenshots.length > 0) {
+        ssDiv.innerHTML = '<h3 style="margin-top:16px;font-size:14px;">Recent Screenshots</h3><div class="screenshot-grid">' +
+            screenshots.slice(0, 6).map(s => `
+                <div class="screenshot-thumb" onclick="window.open('${s.url}','_blank')">
+                    <img src="${s.url}" loading="lazy" alt="${s.name}">
+                    <p>${s.time}</p>
+                </div>
+            `).join('') + '</div>';
+    } else {
+        ssDiv.innerHTML = '';
+    }
+
+    document.getElementById('logModal').classList.add('active');
+}
+
+function closeModal() {
+    document.getElementById('logModal').classList.remove('active');
+}
+
+// Close modal on overlay click
+document.getElementById('logModal').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+});
+
+// ── Init ──
+loadSchedules();
+loadRuns();
+setInterval(loadRuns, 10000);
+</script>
+
+</body>
+</html>
