@@ -1,20 +1,23 @@
 import os
+import platform
 import random
 import re
+import ssl
 import subprocess
 import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
+# Fix for macOS/Linux SSL Certificate Verify Failed error during ChromeDriver download
+ssl._create_default_https_context = ssl._create_unverified_context
+
 import pandas as pd
 from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
+import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium_stealth import stealth
 
 VULCAN7_URL = "https://www.vulcan7.com/login/"
 SCREENSHOTS_DIR = Path(__file__).with_name("screenshots")
@@ -27,7 +30,7 @@ def save_screenshot(driver, label="error"):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = SCREENSHOTS_DIR / f"{label}_{timestamp}.png"
         driver.save_screenshot(str(filename))
-        print(f"📸 Screenshot saved: {filename}")
+        print(f"Screenshot saved: {filename}")
     except Exception as e:
         print(f"Could not save screenshot: {e}")
 
@@ -59,63 +62,64 @@ CREDENTIALS = load_credentials()
 
 def is_headless_server():
     """Detect if running on a headless server (no display available)."""
-    import platform
     if platform.system() == "Linux" and not os.environ.get("DISPLAY"):
         return True
     return False
 
 
+def get_chrome_major_version():
+    """Auto-detect the installed Chrome major version."""
+    chrome_paths = [
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",  # macOS
+        "google-chrome",           # Linux
+        "google-chrome-stable",    # Linux alt
+        "chromium-browser",        # Linux Chromium
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",   # Windows
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    ]
+    for path in chrome_paths:
+        try:
+            result = subprocess.run(
+                [path, "--version"],
+                capture_output=True, text=True, timeout=5
+            )
+            match = re.search(r"(\d+)\.", result.stdout)
+            if match:
+                version = int(match.group(1))
+                print(f"Detected Chrome version: {version}")
+                return version
+        except Exception:
+            continue
+    print("Could not detect Chrome version, letting uc auto-detect.")
+    return None
+
+
 def create_driver():
-    """Create Chrome driver for Vulcan7 (Selenium)."""
-    options = Options()
+    """Create an undetectable Chrome driver (used for both Vulcan7 and BoldTrail)."""
+    profile_dir = os.path.abspath(
+        str(Path(__file__).with_name("boldtrail_profile_selenium"))
+    )
+    chrome_version = get_chrome_major_version()
+
+    options = uc.ChromeOptions()
     options.add_argument("--start-maximized")
     options.add_argument("--window-size=1920,1080")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--no-sandbox")
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option("useAutomationExtension", False)
-
-    debug_port = random.randint(9000, 9999)
-    options.add_argument(f"--remote-debugging-port={debug_port}")
-    options.add_argument("--no-first-run")
-    options.add_argument("--no-default-browser-check")
+    options.add_argument(f"--user-data-dir={profile_dir}")
+    options.add_argument("--profile-directory=Default")
+    options.add_argument("--lang=en-US,en")
 
     headless = is_headless_server()
     if headless:
         print("Headless server detected — enabling headless mode.")
         options.add_argument("--headless=new")
         options.add_argument("--disable-gpu")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
 
-    user_agent = (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    )
-    options.add_argument(f"--user-agent={user_agent}")
-
-    profile_dir = os.path.abspath(
-        str(Path(__file__).with_name("vulcan_profile_selenium"))
-    )
-    options.add_argument(f"--user-data-dir={profile_dir}")
-    options.add_argument("--profile-directory=Default")
-
-    driver = webdriver.Chrome(options=options)
+    driver = uc.Chrome(options=options, headless=headless, version_main=chrome_version)
     if not headless:
         driver.maximize_window()
 
-    stealth(
-        driver,
-        languages=["en-US", "en"],
-        vendor="Google Inc.",
-        platform="Win32",
-        webgl_vendor="Intel Inc.",
-        renderer="Intel Iris OpenGL Engine",
-        fix_hairline=True,
-    )
-    driver.execute_script(
-        "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-    )
     return driver
 
 
@@ -151,7 +155,7 @@ def login_vulcan7(driver):
         EC.element_to_be_clickable((By.XPATH, "(//a[@aria-label='See Contacts'][normalize-space()='Contacts'])[1]"))
     )
     contacts_link.click()
-    
+
     # Wait for contact grid to be present (contacts page loaded)
     wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "#main_contact_grid tbody"))
     )
@@ -314,7 +318,7 @@ def is_yesterday_date_added(date_text: str) -> bool:
 
 
 def run_logins(test_mode=False):
-    """Run Vulcan7 automation to scrape contacts and save to Excel.
+    """Run Vulcan7 scraping + BoldTrail automation in a single undetectable browser.
 
     Args:
         test_mode: If True, use contacts whose 'Date Added' is yesterday (for testing when none have today's date).
@@ -325,8 +329,14 @@ def run_logins(test_mode=False):
 
     had_contacts_from_vulcan = False
     driver = create_driver()
+    print("Undetectable Chrome browser started successfully!")
+
     try:
-        # 1) Vulcan7: login and then scrape each target folder
+        # ── Step 1: Vulcan7 — login and scrape contacts ──
+        print("\n" + "=" * 60)
+        print("Step 1: Vulcan7 — Scraping contacts")
+        print("=" * 60)
+
         login_vulcan7(driver)
 
         folders = ["Off Market", "FSBO", "FRBO (Investors)", "Deal Machine"]
@@ -436,40 +446,30 @@ def run_logins(test_mode=False):
             df_empty.to_excel(output_path, index=False)
             print("No contacts found; vulcan_contacts.xlsx cleared.")
 
-        print("Vulcan7 automation completed. Browser closed.")
+        print("Vulcan7 scraping completed.")
+
+        # ── Step 2: BoldTrail — add contacts using the SAME browser ──
+        if not had_contacts_from_vulcan:
+            print("\n" + "=" * 60)
+            print("No new contacts from Vulcan7. Skipping BoldTrail.")
+            print("=" * 60)
+        else:
+            print("\n" + "=" * 60)
+            print("Step 2: BoldTrail — Adding contacts (same browser)")
+            print("=" * 60 + "\n")
+
+            from boldtrail import run_boldtrail_with_driver
+
+            # Run BoldTrail in the SAME browser (no new browser)
+            run_boldtrail_with_driver(driver)
+
     except Exception as e:
-        print(f"Vulcan7 automation error: {e}")
-        save_screenshot(driver, "vulcan7_critical")
+        print(f"Automation error: {e}")
+        save_screenshot(driver, "critical_error")
         raise
     finally:
+        print("Closing browser...")
         driver.quit()
-
-    # Start BoldTrail only if Vulcan7 had contacts to save
-    if not had_contacts_from_vulcan:
-        print("\n" + "=" * 60)
-        print("No new contacts from Vulcan7. Skipping BoldTrail.")
-        print("=" * 60)
-    else:
-        print("\n" + "=" * 60)
-        print("Starting BoldTrail automation automatically...")
-        print("=" * 60 + "\n")
-
-        try:
-            test_script_path = Path(__file__).with_name("boldtrail.py")
-            if test_script_path.exists():
-                result = subprocess.run(
-                    [sys.executable, str(test_script_path)],
-                    capture_output=False,
-                    text=True
-                )
-                if result.returncode == 0:
-                    print("\n✓ BoldTrail automation completed successfully!")
-                else:
-                    print(f"\n✗ BoldTrail automation exited with code {result.returncode}")
-            else:
-                print(f"Warning: boldtrail.py not found at {test_script_path}")
-        except Exception as e:
-            print(f"Error running BoldTrail automation: {e}")
 
     print("\n" + "=" * 60)
     print("All automation completed!")

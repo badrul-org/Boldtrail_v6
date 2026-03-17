@@ -27,7 +27,7 @@ def save_screenshot(driver, label="error"):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = SCREENSHOTS_DIR / f"{label}_{timestamp}.png"
         driver.save_screenshot(str(filename))
-        print(f"📸 Screenshot saved: {filename}")
+        print(f"Screenshot saved: {filename}")
     except Exception as e:
         print(f"Could not save screenshot: {e}")
 
@@ -89,22 +89,12 @@ def get_chrome_major_version():
     return None
 
 
-def is_headless_server():
-    """Detect if running on a headless server (no display available)."""
-    import os
-    import platform
-    if platform.system() == "Linux" and not os.environ.get("DISPLAY"):
-        return True
-    return False
-
-
 def create_undetectable_driver():
     """Create an undetectable Chrome driver using undetected-chromedriver."""
     import os
 
     profile_dir = os.path.abspath("./boldtrail_profile_selenium")
     chrome_version = get_chrome_major_version()
-    headless_mode = is_headless_server()
 
     options = uc.ChromeOptions()
     options.add_argument("--start-maximized")
@@ -113,18 +103,8 @@ def create_undetectable_driver():
     options.add_argument("--profile-directory=Default")
     options.add_argument("--lang=en-US,en")
 
-    if headless_mode:
-        print("Headless server detected — enabling headless mode with server flags.")
-        options.add_argument("--headless=new")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--remote-debugging-port=9222")
-
-    driver = uc.Chrome(options=options, headless=headless_mode, version_main=chrome_version)
-
-    if not headless_mode:
-        driver.maximize_window()
+    driver = uc.Chrome(options=options, headless=False, version_main=chrome_version)
+    driver.maximize_window()
 
     return driver
 
@@ -132,14 +112,6 @@ def create_undetectable_driver():
 def visit_google_news_first(driver):
     """Visit Google News first to simulate normal browsing behavior."""
     print("Opening Google News first to simulate normal browsing...")
-
-    # Wait for at least one window handle to be available and stable
-    for _ in range(10):
-        if driver.window_handles:
-            break
-        time.sleep(1)
-    driver.switch_to.window(driver.window_handles[0])
-
     driver.get("https://news.google.com")
     
     # Wait for page to load
@@ -160,7 +132,7 @@ def visit_google_news_first(driver):
             driver.execute_script("window.scrollBy(0, -100);")
             time.sleep(scroll_pause)
     
-    print("Finished browsing Google News. Opening BoldTrail in new tab...")
+    print("Finished browsing Google News. Navigating to BoldTrail...")
 
 
 def handle_cloudflare(driver):
@@ -219,9 +191,7 @@ def login_boldtrail(driver):
     password = CREDENTIALS["BOLDTRAIL_PASSWORD"]
 
     print(f"Navigating to {BOLDTRAIL_URL}...")
-    # Open BoldTrail in a new tab
-    driver.execute_script("window.open('');")
-    driver.switch_to.window(driver.window_handles[-1])
+    # Navigate in the same tab (no new browser or tab needed)
     driver.get(BOLDTRAIL_URL)
     
     # Wait a bit for page to load
@@ -405,7 +375,7 @@ def fill_contact_form(driver, contact):
             print(f"Could not fill Address: {e}")
             save_screenshot(driver, "boldtrail_address_failed")
             return False
-        
+
         # city_input = driver.find_element(By.XPATH, "(//input[@type='text'])[6]")
         # city_input.clear()
         # for char in str(contact.get('City', '')):
@@ -581,49 +551,50 @@ def process_contacts_from_excel(driver):
         save_screenshot(driver, "boldtrail_excel_processing_failed")
 
 
-def run_boldtrail_login():
-    """Run BoldTrail login automation using undetectable Selenium."""
+def run_boldtrail_with_driver(driver):
+    """Run BoldTrail automation using an existing driver (called from app.py)."""
+    visit_google_news_first(driver)
+    login_boldtrail(driver)
+    print("BoldTrail automation completed.")
+
+
+def run_boldtrail_standalone():
+    """Run BoldTrail standalone with its own browser (only when running boldtrail.py directly)."""
     restart_count = 0
     max_restarts = 5
-    
+
     while True:
         driver = None
         try:
             print("Starting undetectable Chrome browser...")
             driver = create_undetectable_driver()
-            
+
             print("Browser started successfully!")
-            
-            # First, visit Google News and scroll for 10 seconds
-            visit_google_news_first(driver)
-            
-            # Then open BoldTrail in a new tab and login
-            login_boldtrail(driver)
-            
-            print("BoldTrail automation completed. Keeping browser open for 10 seconds.")
+            run_boldtrail_with_driver(driver)
+
+            print("Keeping browser open for 10 seconds.")
             time.sleep(10)
             break  # Exit loop if successful
-            
+
         except RestartBrowserException as e:
             restart_count += 1
             print(f"\n!!! RESTARTING BROWSER DUE TO ERROR: {e} (Attempt {restart_count}/{max_restarts}) !!!\n")
-            if driver:
-                save_screenshot(driver, f"boldtrail_restart_{restart_count}")
 
             if driver:
+                save_screenshot(driver, f"boldtrail_restart_{restart_count}")
                 try:
                     driver.quit()
                 except Exception:
                     pass
             driver = None
-            
+
             if restart_count >= max_restarts:
                 print(f"Max restarts ({max_restarts}) reached. Stopping automation.")
                 break
-                
+
             time.sleep(5)  # Wait a bit before restarting
             continue  # Restart the loop
-            
+
         except Exception as e:
             print(f"Critical error occurred: {e}")
             if driver:
@@ -636,4 +607,4 @@ def run_boldtrail_login():
 
 
 if __name__ == "__main__":
-    run_boldtrail_login()
+    run_boldtrail_standalone()
