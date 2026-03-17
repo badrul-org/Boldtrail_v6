@@ -1,0 +1,6 @@
+boldtrail_profile_selenium/
+env/
+__pycache__/
+*.pyc
+credentials.txt
+vulcan_contacts.xlsx
