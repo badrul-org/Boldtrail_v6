@@ -3,6 +3,7 @@ import random
 import re
 import subprocess
 import ssl
+from datetime import datetime
 
 # Fix for macOS Python SSL Certificate Verify Failed error during ChromeDriver download
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -16,6 +17,19 @@ from selenium.webdriver.common.keys import Keys
 
 BOLDTRAIL_URL = "https://boldtrail.exprealty.com/login/?redir=%2Fdashboard"
 LEAD_OWNER = "Patrick Goswitz"  # Default lead owner name
+SCREENSHOTS_DIR = Path(__file__).with_name("screenshots")
+
+
+def save_screenshot(driver, label="error"):
+    """Save a screenshot with timestamp when something fails."""
+    try:
+        SCREENSHOTS_DIR.mkdir(exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = SCREENSHOTS_DIR / f"{label}_{timestamp}.png"
+        driver.save_screenshot(str(filename))
+        print(f"📸 Screenshot saved: {filename}")
+    except Exception as e:
+        print(f"Could not save screenshot: {e}")
 
 
 class RestartBrowserException(Exception):
@@ -297,6 +311,7 @@ def login_boldtrail(driver):
         raise  # Propagate restart signal up to the main runner
     except Exception as e:
         print(f"Email input did not appear within 3 minutes. Checking for 'Add Contact' button...")
+        save_screenshot(driver, "boldtrail_login_failed")
         try:
             # Check for "Add Contact" button as a fallback
             WebDriverWait(driver, 5).until(
@@ -307,6 +322,7 @@ def login_boldtrail(driver):
             return
         except Exception:
             print("Neither email input nor 'Add Contact' button found. Closing browser.")
+            save_screenshot(driver, "boldtrail_no_login_no_dashboard")
             raise e
 
 
@@ -387,6 +403,7 @@ def fill_contact_form(driver, contact):
             address_input.send_keys(Keys.ENTER)
         except Exception as e:
             print(f"Could not fill Address: {e}")
+            save_screenshot(driver, "boldtrail_address_failed")
             return False
         
         # city_input = driver.find_element(By.XPATH, "(//input[@type='text'])[6]")
@@ -478,10 +495,12 @@ def fill_contact_form(driver, contact):
             return True
         except Exception as e:
             print(f"Error submitting form: {e}")
+            save_screenshot(driver, "boldtrail_submit_failed")
             return False
-        
+
     except Exception as e:
         print(f"Error filling contact form: {e}")
+        save_screenshot(driver, "boldtrail_form_failed")
         return False
 
 
@@ -541,6 +560,7 @@ def process_contacts_from_excel(driver):
                 print(f"✓ Contact added successfully! Updated Excel file.")
             else:
                 print(f"✗ Failed to add contact. Initiating browser restart...")
+                save_screenshot(driver, "boldtrail_contact_failed")
                 raise RestartBrowserException("Contact form submission failed.")
             
             # Go back to dashboard and wait for Add Contact to be ready
@@ -558,6 +578,7 @@ def process_contacts_from_excel(driver):
         raise  # Propagate restart signal up to the main runner
     except Exception as e:
         print(f"Error processing contacts from Excel: {e}")
+        save_screenshot(driver, "boldtrail_excel_processing_failed")
 
 
 def run_boldtrail_login():
@@ -586,7 +607,9 @@ def run_boldtrail_login():
         except RestartBrowserException as e:
             restart_count += 1
             print(f"\n!!! RESTARTING BROWSER DUE TO ERROR: {e} (Attempt {restart_count}/{max_restarts}) !!!\n")
-            
+            if driver:
+                save_screenshot(driver, f"boldtrail_restart_{restart_count}")
+
             if driver:
                 try:
                     driver.quit()
@@ -603,6 +626,8 @@ def run_boldtrail_login():
             
         except Exception as e:
             print(f"Critical error occurred: {e}")
+            if driver:
+                save_screenshot(driver, "boldtrail_critical")
             break  # Exit loop on critical error
         finally:
             if driver:

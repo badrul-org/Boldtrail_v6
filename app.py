@@ -17,6 +17,19 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium_stealth import stealth
 
 VULCAN7_URL = "https://www.vulcan7.com/login/"
+SCREENSHOTS_DIR = Path(__file__).with_name("screenshots")
+
+
+def save_screenshot(driver, label="error"):
+    """Save a screenshot with timestamp when something fails."""
+    try:
+        SCREENSHOTS_DIR.mkdir(exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = SCREENSHOTS_DIR / f"{label}_{timestamp}.png"
+        driver.save_screenshot(str(filename))
+        print(f"📸 Screenshot saved: {filename}")
+    except Exception as e:
+        print(f"Could not save screenshot: {e}")
 
 
 def load_credentials():
@@ -390,6 +403,7 @@ def run_logins(test_mode=False):
                 all_contacts.extend(contacts_to_add)
             except Exception as e:
                 print(f"Error while processing folder '{folder}': {e}")
+                save_screenshot(driver, f"vulcan7_folder_{folder.replace(' ', '_')}")
                 continue
 
         # Deduplicate by (name, email)
@@ -423,6 +437,10 @@ def run_logins(test_mode=False):
             print("No contacts found; vulcan_contacts.xlsx cleared.")
 
         print("Vulcan7 automation completed. Browser closed.")
+    except Exception as e:
+        print(f"Vulcan7 automation error: {e}")
+        save_screenshot(driver, "vulcan7_critical")
+        raise
     finally:
         driver.quit()
 
