@@ -90,8 +90,42 @@ def get_chrome_major_version():
                 return version
         except Exception:
             continue
+
+    # Windows registry fallback
+    if platform.system() == "Windows":
+        try:
+            import winreg
+            reg_path = r"SOFTWARE\Google\Chrome\BLBeacon"
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, reg_path) as key:
+                ver_str, _ = winreg.QueryValueEx(key, "version")
+                match = re.search(r"(\d+)\.", ver_str)
+                if match:
+                    version = int(match.group(1))
+                    print(f"Detected Chrome version (registry): {version}")
+                    return version
+        except Exception:
+            pass
+
     print("Could not detect Chrome version, letting uc auto-detect.")
     return None
+
+
+def _build_chrome_options(profile_dir, headless):
+    """Build a fresh ChromeOptions object (cannot be reused across uc.Chrome calls)."""
+    options = uc.ChromeOptions()
+    options.add_argument("--start-maximized")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument(f"--user-data-dir={profile_dir}")
+    options.add_argument("--profile-directory=Default")
+    options.add_argument("--lang=en-US,en")
+
+    if headless:
+        options.add_argument("--headless=new")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+
+    return options
 
 
 def create_driver():
@@ -100,26 +134,17 @@ def create_driver():
         str(Path(__file__).with_name("boldtrail_profile_selenium"))
     )
     chrome_version = get_chrome_major_version()
-
-    options = uc.ChromeOptions()
-    options.add_argument("--start-maximized")
-    options.add_argument("--window-size=1920,1080")
-    options.add_argument(f"--user-data-dir={profile_dir}")
-    options.add_argument("--profile-directory=Default")
-    options.add_argument("--lang=en-US,en")
-
     headless = is_headless_server()
+
     if headless:
         print("Headless server detected — enabling headless mode.")
-        options.add_argument("--headless=new")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
 
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
+        driver = None
         try:
             print(f"Starting browser (attempt {attempt}/{max_attempts})...")
+            options = _build_chrome_options(profile_dir, headless)
             driver = uc.Chrome(options=options, headless=headless, version_main=chrome_version)
             if not headless:
                 try:
@@ -129,13 +154,14 @@ def create_driver():
             return driver
         except Exception as e:
             print(f"Browser failed to start (attempt {attempt}/{max_attempts}): {e}")
-            try:
-                driver.quit()
-            except Exception:
-                pass
+            if driver:
+                try:
+                    driver.quit()
+                except Exception:
+                    pass
             if attempt >= max_attempts:
                 raise RuntimeError(f"Could not start browser after {max_attempts} attempts: {e}")
-            time.sleep(3)
+            time.sleep(5)
 
 
 def _send_keys_slowly(element, text, delay_range=(30, 60)):
