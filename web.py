@@ -386,6 +386,12 @@ def get_runs():
 
 @app.route("/api/runs/<run_id>/logs", methods=["GET"])
 def get_run_logs(run_id):
+    # First check in-memory logs (for runs still in progress)
+    mem_logs = log_capture.get_run_logs(run_id)
+    if mem_logs:
+        return jsonify([{"timestamp": e["ts"], "message": e["msg"]} for e in mem_logs])
+
+    # Fall back to database (for completed runs)
     conn = db_conn()
     rows = conn.execute(
         "SELECT timestamp, message FROM run_logs WHERE run_id=? ORDER BY id", (run_id,)

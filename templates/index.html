@@ -536,6 +536,8 @@ async function runNow() {
 }
 
 // ── Run History ──
+let runsCache = {};  // Store run data to avoid broken onclick attributes
+
 async function loadRuns() {
     const res = await fetch('/api/runs');
     const runs = await res.json();
@@ -546,8 +548,11 @@ async function loadRuns() {
         return;
     }
 
+    // Cache all run data for lookup
+    runs.forEach(r => { runsCache[r.id] = r; });
+
     tbody.innerHTML = runs.map(r => `
-        <tr class="clickable" onclick="showRunLogs('${r.id}', '${r.status}', ${JSON.stringify(r.error_message || '').replace(/'/g, "\\'")})">
+        <tr class="clickable" onclick="showRunLogs('${r.id}')">
             <td style="font-family:monospace;color:#58a6ff;">${r.id}</td>
             <td>${r.started_at || '-'}</td>
             <td>${r.finished_at || '-'}</td>
@@ -557,7 +562,11 @@ async function loadRuns() {
     `).join('');
 }
 
-async function showRunLogs(runId, status, errorMsg) {
+async function showRunLogs(runId) {
+    const run = runsCache[runId] || {};
+    const status = run.status || '';
+    const errorMsg = run.error_message || '';
+
     document.getElementById('modalTitle').textContent = `Run ${runId}`;
     const modalLogs = document.getElementById('modalLogs');
     const modalError = document.getElementById('modalError');
