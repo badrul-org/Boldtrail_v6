@@ -179,7 +179,9 @@ class BrowserManager:
         if self.driver is None:
             return False
         try:
-            _ = self.driver.title
+            # Do a real check — title alone can succeed on a stale session
+            _ = self.driver.current_url
+            self.driver.execute_script("return 1")
             return True
         except Exception:
             return False
@@ -188,13 +190,27 @@ class BrowserManager:
         """Get the driver, restarting it if it crashed."""
         if not self.is_alive():
             print("[BrowserManager] Browser not alive, restarting...")
+            self._kill_driver()
+            self.driver = create_driver()
+            print("[BrowserManager] Browser restarted.")
+        return self.driver
+
+    def force_restart(self):
+        """Force kill and recreate the browser."""
+        print("[BrowserManager] Force restarting browser...")
+        self._kill_driver()
+        self.driver = create_driver()
+        print("[BrowserManager] Browser force-restarted.")
+        return self.driver
+
+    def _kill_driver(self):
+        """Safely kill the current driver."""
+        if self.driver:
             try:
                 self.driver.quit()
             except Exception:
                 pass
-            self.driver = create_driver()
-            print("[BrowserManager] Browser restarted.")
-        return self.driver
+            self.driver = None
 
     def acquire(self):
         self._lock.acquire()
@@ -210,11 +226,7 @@ class BrowserManager:
         return self._busy
 
     def shutdown(self):
-        if self.driver:
-            try:
-                self.driver.quit()
-            except Exception:
-                pass
+        self._kill_driver()
 
 
 browser_mgr = BrowserManager()
@@ -228,7 +240,7 @@ scheduler = BackgroundScheduler()
 
 
 def execute_run(schedule_id=None, test_mode=False):
-    """Execute automation run using the persistent browser."""
+    """Execute automation run using the persistent browser. Retries once with a fresh browser on failure."""
     run_id = str(uuid.uuid4())[:8]
     started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -254,16 +266,42 @@ def execute_run(schedule_id=None, test_mode=False):
 
     status = "success"
     error_msg = None
+    max_attempts = 2  # Try once, retry once with fresh browser
 
     driver = browser_mgr.acquire()
     try:
-        print(f"[Run {run_id}] Starting automation...")
-        run_logins(test_mode=test_mode, driver=driver)
-        print(f"[Run {run_id}] Automation completed successfully!")
-    except Exception as e:
-        status = "error"
-        error_msg = str(e)
-        print(f"[Run {run_id}] ERROR: {e}")
+        for attempt in range(1, max_attempts + 1):
+            try:
+                if attempt > 1:
+                    print(f"[Run {run_id}] Retrying with fresh browser (attempt {attempt}/{max_attempts})...")
+                    driver = browser_mgr.force_restart()
+                    time.sleep(3)
+
+                print(f"[Run {run_id}] Starting automation...")
+                run_logins(test_mode=test_mode, driver=driver)
+                print(f"[Run {run_id}] Automation completed successfully!")
+                break  # Success — exit retry loop
+
+            except Exception as e:
+                error_msg = str(e)
+                print(f"[Run {run_id}] ERROR (attempt {attempt}/{max_attempts}): {e}")
+
+                if attempt < max_attempts:
+                    # Check if it's a stale browser error worth retrying
+                    err_lower = error_msg.lower()
+                    if any(k in err_lower for k in [
+                        "session", "chrome not reachable", "no such window",
+                        "unable to evaluate", "target window already closed",
+                        "handleverifier", "disconnected", "not connected",
+                    ]):
+                        print(f"[Run {run_id}] Browser appears stale, will restart and retry...")
+                        continue
+                    else:
+                        # Non-browser error, don't retry
+                        status = "error"
+                        break
+                else:
+                    status = "error"
     finally:
         browser_mgr.release()
         sys.stdout = old_stdout
