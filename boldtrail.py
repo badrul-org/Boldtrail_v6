@@ -513,76 +513,145 @@ def fill_contact_form(driver, contact):
         return False
 
 
+def dismiss_popups(driver):
+    """Dismiss any ad popups, overlays, or intercom widgets that block the page."""
+    try:
+        # Remove intercom/chat widgets
+        driver.execute_script("""
+            var selectors = [
+                'iframe[data-intercom-frame]', 'iframe[name*="intercom"]',
+                'iframe.intercom-with-namespace', '.intercom-lightweight-app',
+                '[class*="popup"]', '[class*="overlay"]', '[class*="modal-backdrop"]',
+                '[id*="popup"]', '[id*="overlay"]'
+            ];
+            selectors.forEach(function(sel) {
+                document.querySelectorAll(sel).forEach(function(el) {
+                    el.style.display = 'none';
+                    el.style.visibility = 'hidden';
+                    el.style.pointerEvents = 'none';
+                });
+            });
+        """)
+    except Exception:
+        pass
+
+    # Try closing any visible close/dismiss buttons
+    close_xpaths = [
+        "//button[contains(@class, 'close')]",
+        "//button[contains(text(), 'Close')]",
+        "//button[contains(text(), 'Dismiss')]",
+        "//button[contains(text(), '×')]",
+        "//span[contains(text(), '×')]",
+    ]
+    for xpath in close_xpaths:
+        try:
+            btns = driver.find_elements(By.XPATH, xpath)
+            for btn in btns:
+                if btn.is_displayed():
+                    driver.execute_script("arguments[0].click();", btn)
+                    time.sleep(0.3)
+        except Exception:
+            pass
+
+
+def ensure_add_contact_ready(driver, max_retries=2):
+    """Make sure the 'Add Contact' button is clickable. Reload page if blocked by popup."""
+    for attempt in range(max_retries + 1):
+        try:
+            dismiss_popups(driver)
+            add_btn = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, "//span[normalize-space()='Add Contact']"))
+            )
+            add_btn.click()
+            # Wait for form first field
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.XPATH, "(//input[@type='text'])[1]"))
+            )
+            return True
+        except Exception as e:
+            if attempt < max_retries:
+                print(f"'Add Contact' not clickable (attempt {attempt + 1}), reloading page...")
+                save_screenshot(driver, f"add_contact_blocked_attempt_{attempt + 1}")
+                driver.get("https://boldtrail.exprealty.com/dashboard")
+                time.sleep(3)
+            else:
+                print(f"Could not click 'Add Contact' after {max_retries + 1} attempts: {e}")
+                return False
+
+
 def process_contacts_from_excel(driver):
     """Read Excel file and add contacts to BoldTrail one by one."""
     excel_path = Path(__file__).with_name("vulcan_contacts.xlsx")
-    
+
     if not excel_path.exists():
         print(f"Excel file not found: {excel_path}")
         return
-    
+
     try:
         # Read Excel file
         df = pd.read_excel(excel_path)
-        
+
         # Ensure boldtrail column exists
         if "boldtrail" not in df.columns:
             df["boldtrail"] = False
-        
+
         # Filter contacts where boldtrail = False
         contacts_pending = df[df["boldtrail"] == False].copy()
         contacts_to_add = contacts_pending
-        
+
         if len(contacts_to_add) == 0:
             print("No contacts to add. All contacts have already been added to BoldTrail.")
             return
-        
+
         print(f"Found {len(contacts_to_add)} contacts to add to BoldTrail. Will process all of them one by one.")
-        
-        # Process each contact (all 10, 20, or however many have boldtrail=False)
+
+        # Process each contact
         for count, (idx, contact_row) in enumerate(contacts_to_add.iterrows(), start=1):
             contact = contact_row.to_dict()
-            
+
             print(f"\n--- Processing contact {count}/{len(contacts_to_add)} ---")
-            
-            # Click "Add Contact" button for each new contact
-            try:
-                add_contact_button = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, "//span[normalize-space()='Add Contact']"))
-                )
-                add_contact_button.click()
-                # Wait for form first field to be visible
-                WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.XPATH, "(//input[@type='text'])[1]"))
-                )
-            except Exception:
-                print("Could not click 'Add Contact' button. Form might already be open.")
-            
-            # Fill the form
+
+            # Click "Add Contact" button (with popup dismissal + page reload retry)
+            if not ensure_add_contact_ready(driver):
+                print("Could not open Add Contact form. Skipping to next contact...")
+                save_screenshot(driver, "boldtrail_add_contact_stuck")
+                continue
+
+            # Fill the form (retry once with page reload if element not interactable)
             success = fill_contact_form(driver, contact)
-            
+
+            if not success:
+                print("Form fill failed, reloading page and retrying...")
+                save_screenshot(driver, "boldtrail_form_retry")
+                driver.get("https://boldtrail.exprealty.com/dashboard")
+                time.sleep(3)
+
+                if ensure_add_contact_ready(driver):
+                    success = fill_contact_form(driver, contact)
+
             if success:
                 # Update Excel: set boldtrail = True for this contact
                 df.at[idx, "boldtrail"] = True
                 df.to_excel(excel_path, index=False)
                 print(f"✓ Contact added successfully! Updated Excel file.")
-                print(f"✓ Contact added successfully! Updated Excel file.")
             else:
-                print(f"✗ Failed to add contact. Initiating browser restart...")
+                print(f"✗ Failed to add contact after retry. Initiating browser restart...")
                 save_screenshot(driver, "boldtrail_contact_failed")
-                raise RestartBrowserException("Contact form submission failed.")
-            
+                raise RestartBrowserException("Contact form submission failed after retry.")
+
             # Go back to dashboard and wait for Add Contact to be ready
             try:
-                driver.get(BOLDTRAIL_URL)
+                driver.get("https://boldtrail.exprealty.com/dashboard")
+                time.sleep(2)
+                dismiss_popups(driver)
                 WebDriverWait(driver, 15).until(
                     EC.element_to_be_clickable((By.XPATH, "//span[normalize-space()='Add Contact']"))
                 )
             except Exception:
                 pass
-        
+
         print(f"\nCompleted processing {len(contacts_to_add)} contacts.")
-        
+
     except RestartBrowserException:
         raise  # Propagate restart signal up to the main runner
     except Exception as e:
