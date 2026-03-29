@@ -117,12 +117,38 @@ def _build_chrome_options(profile_dir):
     return options
 
 
+def _kill_stale_chrome():
+    """Kill any leftover chrome/chromedriver processes that block restart."""
+    import platform as _plat
+    if _plat.system() == "Windows":
+        for proc_name in ["chromedriver.exe", "chrome.exe"]:
+            try:
+                subprocess.run(["taskkill", "/F", "/IM", proc_name],
+                               capture_output=True, timeout=5)
+            except Exception:
+                pass
+    else:
+        for proc_name in ["chromedriver", "chrome"]:
+            try:
+                subprocess.run(["pkill", "-f", proc_name],
+                               capture_output=True, timeout=5)
+            except Exception:
+                pass
+
+
+# Cache Chrome version so we only detect once per process
+_cached_chrome_version = None
+
+
 def create_undetectable_driver():
     """Create an undetectable Chrome driver using undetected-chromedriver."""
+    global _cached_chrome_version
     import os
 
     profile_dir = os.path.abspath("./boldtrail_profile_selenium")
-    chrome_version = get_chrome_major_version()
+
+    if _cached_chrome_version is None:
+        _cached_chrome_version = get_chrome_major_version()
 
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
@@ -130,7 +156,7 @@ def create_undetectable_driver():
         try:
             print(f"Starting browser (attempt {attempt}/{max_attempts})...")
             options = _build_chrome_options(profile_dir)
-            driver = uc.Chrome(options=options, headless=False, version_main=chrome_version)
+            driver = uc.Chrome(options=options, headless=False, version_main=_cached_chrome_version)
             try:
                 driver.maximize_window()
             except Exception:
@@ -143,6 +169,7 @@ def create_undetectable_driver():
                     driver.quit()
                 except Exception:
                     pass
+            _kill_stale_chrome()
             if attempt >= max_attempts:
                 raise RuntimeError(f"Could not start browser after {max_attempts} attempts: {e}")
             time.sleep(5)

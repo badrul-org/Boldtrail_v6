@@ -128,12 +128,39 @@ def _build_chrome_options(profile_dir, headless):
     return options
 
 
+def _kill_stale_chrome():
+    """Kill any leftover chrome/chromedriver processes that block restart."""
+    if platform.system() == "Windows":
+        for proc_name in ["chromedriver.exe", "chrome.exe"]:
+            try:
+                subprocess.run(["taskkill", "/F", "/IM", proc_name],
+                               capture_output=True, timeout=5)
+            except Exception:
+                pass
+    else:
+        for proc_name in ["chromedriver", "chrome"]:
+            try:
+                subprocess.run(["pkill", "-f", proc_name],
+                               capture_output=True, timeout=5)
+            except Exception:
+                pass
+
+
+# Cache Chrome version so we only detect once per process
+_cached_chrome_version = None
+
+
 def create_driver():
     """Create an undetectable Chrome driver (used for both Vulcan7 and BoldTrail)."""
+    global _cached_chrome_version
+
     profile_dir = os.path.abspath(
         str(Path(__file__).with_name("boldtrail_profile_selenium"))
     )
-    chrome_version = get_chrome_major_version()
+
+    if _cached_chrome_version is None:
+        _cached_chrome_version = get_chrome_major_version()
+
     headless = is_headless_server()
 
     if headless:
@@ -145,7 +172,7 @@ def create_driver():
         try:
             print(f"Starting browser (attempt {attempt}/{max_attempts})...")
             options = _build_chrome_options(profile_dir, headless)
-            driver = uc.Chrome(options=options, headless=headless, version_main=chrome_version)
+            driver = uc.Chrome(options=options, headless=headless, version_main=_cached_chrome_version)
             if not headless:
                 try:
                     driver.maximize_window()
@@ -159,6 +186,8 @@ def create_driver():
                     driver.quit()
                 except Exception:
                     pass
+            # Kill any leftover processes before retrying
+            _kill_stale_chrome()
             if attempt >= max_attempts:
                 raise RuntimeError(f"Could not start browser after {max_attempts} attempts: {e}")
             time.sleep(5)

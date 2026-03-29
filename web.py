@@ -21,7 +21,7 @@ from apscheduler.triggers.cron import CronTrigger
 import pytz
 
 # ── Import automation functions from app.py ──
-from app import create_driver, run_logins, save_screenshot, SCREENSHOTS_DIR
+from app import create_driver, run_logins, save_screenshot, SCREENSHOTS_DIR, _kill_stale_chrome
 
 BASE_DIR = Path(__file__).parent
 DB_PATH = BASE_DIR / "automation.db"
@@ -204,13 +204,16 @@ class BrowserManager:
         return self.driver
 
     def _kill_driver(self):
-        """Safely kill the current driver."""
+        """Safely kill the current driver and any leftover Chrome processes."""
         if self.driver:
             try:
                 self.driver.quit()
             except Exception:
                 pass
             self.driver = None
+        # Kill any orphaned chrome/chromedriver processes
+        _kill_stale_chrome()
+        time.sleep(2)  # Wait for processes to fully exit
 
     def acquire(self):
         self._lock.acquire()
